@@ -1,12 +1,12 @@
 extern crate image;
 
-use std::path::PathBuf;
-use structopt::StructOpt;
+use rayon::prelude::*;
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
-use rayon::prelude::*;
+use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "subtitle_tonemap", about = "Tonemap PGS Subtitles")]
@@ -31,12 +31,18 @@ fn main() -> std::io::Result<()> {
     let mut java_jar = env::current_exe()?;
     java_jar.pop();
     java_jar.push("BDSup2Sub512.jar");
-    assert!(java_jar.exists(), "BDSup2Sub should be in the same directory as this executable.");
+    assert!(
+        java_jar.exists(),
+        "BDSup2Sub should be in the same directory as this executable."
+    );
 
     let input = opt.input;
     let output = opt.output;
 
-    assert!(opt.percentage <= 100.0, "Percentage has to be between 0 and 100.");
+    assert!(
+        opt.percentage <= 100.0,
+        "Percentage has to be between 0 and 100."
+    );
     let percentage: f32 = opt.percentage / 100.0;
 
     working_dir.push(output.as_path());
@@ -48,10 +54,11 @@ fn main() -> std::io::Result<()> {
 
     let mut files: Vec<PathBuf> = Vec::new();
     if input.exists() {
-        match input.is_dir() {
-            true => {
-                files.extend(
-                    input.read_dir().expect("Couldn't read directory content")
+        if input.is_dir() {
+            files.extend(
+                input
+                    .read_dir()
+                    .expect("Couldn't read directory content")
                     .filter_map(Result::ok)
                     .filter(|e| e.metadata().expect("Couldn't get file metadata").is_file())
                     .filter(|e| e.path().extension().expect("File has no extension") == "sup")
@@ -61,29 +68,24 @@ fn main() -> std::io::Result<()> {
                         path.push(e.path());
 
                         path
-                    })
-                );
-            }
-            false => {
-                if input.extension().expect("File has no extension") == "sup" {
-                    files.push(input);
-                }
-            }
+                    }),
+            );
+        } else if input.extension().expect("File has no extension") == "sup" {
+            files.push(input);
         }
     }
 
     let total: u64 = files.len() as u64;
 
-    (0.. files.len()).into_par_iter().for_each(|current| {
+    (0..files.len()).into_par_iter().for_each(|current| {
         let file = &files[current];
 
         println!("Tonemapping subtitle #{} of {}", current + 1, total);
         extract_images(&java_jar, &working_dir, &file, current)
             .and_then(|out_file| process_images(out_file, percentage))
-            .and_then(|timestamps| {
-                merge_images(&java_jar, &working_dir, &file, timestamps)
-            })
-            .and_then(|dir| cleanup_images(dir)).ok();
+            .and_then(|timestamps| merge_images(&java_jar, &working_dir, &file, timestamps))
+            .and_then(cleanup_images)
+            .ok();
     });
 
     println!("Done: {:#?} elapsed", now.elapsed());
@@ -91,7 +93,12 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn extract_images(java_jar: &PathBuf, working_dir: &PathBuf, file: &PathBuf, index: usize) -> Result<PathBuf, std::io::Error> {
+fn extract_images(
+    java_jar: &PathBuf,
+    working_dir: &PathBuf,
+    file: &PathBuf,
+    index: usize,
+) -> Result<PathBuf, std::io::Error> {
     let mut out_file = PathBuf::from(working_dir);
     out_file.push(format!("sub{}", index));
 
@@ -102,9 +109,17 @@ fn extract_images(java_jar: &PathBuf, working_dir: &PathBuf, file: &PathBuf, ind
     out_file.push(format!("sub{}.xml", index));
 
     let output = Command::new("java")
-                    .args(&["-jar", java_jar.to_str().unwrap(), "-T", "keep", "-o", out_file.to_str().unwrap(), file.to_str().unwrap()])
-                    .output()
-                    .expect("Failed to execute process");
+        .args(&[
+            "-jar",
+            java_jar.to_str().unwrap(),
+            "-T",
+            "keep",
+            "-o",
+            out_file.to_str().unwrap(),
+            file.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute process");
 
     if output.status.success() {
         Ok(out_file)
@@ -117,41 +132,61 @@ fn process_images(file: PathBuf, percentage: f32) -> Result<PathBuf, std::io::Er
     let mut in_dir = PathBuf::from(&file);
     in_dir.pop();
 
-    let images: Vec<PathBuf> = in_dir.read_dir().expect("Couldn't read images directory")
+    let images: Vec<PathBuf> = in_dir
+        .read_dir()
+        .expect("Couldn't read images directory")
         .filter_map(Result::ok)
         .filter(|e| e.path().extension().expect("File has no extension") == "png")
-        .map(|e| e.path()).collect();
+        .map(|e| e.path())
+        .collect();
 
-    images.par_iter().map(|i| {
-        let mut img = image::open(&i).ok().expect("Opening image failed").to_rgba();
+    images
+        .par_iter()
+        .map(|i| {
+            let mut img = image::open(&i).expect("Opening image failed").to_rgba();
 
-        img.pixels_mut().filter(|p| {
-                let image::Rgba(data) = **p;
-                (data[0] > 1  && data[1] > 1 && data[2] > 1 && data[3] > 0)
-            })
-            .for_each(|p| {
-                let image::Rgba(mut data) = *p;
-                data[0] = (data[0] as f32 * percentage).round() as u8;
-                data[1] = (data[1] as f32 * percentage).round() as u8;
-                data[2] = (data[2] as f32 * percentage).round() as u8;
+            img.pixels_mut()
+                .filter(|p| {
+                    let image::Rgba(data) = **p;
+                    (data[0] > 1 && data[1] > 1 && data[2] > 1 && data[3] > 0)
+                })
+                .for_each(|p| {
+                    let image::Rgba(mut data) = *p;
+                    data[0] = (f32::from(data[0]) * percentage).round() as u8;
+                    data[1] = (f32::from(data[1]) * percentage).round() as u8;
+                    data[2] = (f32::from(data[1]) * percentage).round() as u8;
 
-                *p = image::Rgba(data);
-            });
+                    *p = image::Rgba(data);
+                });
 
-        (i, img)
-    }).for_each(|(path, img)| img.save(&path).unwrap());
+            (i, img)
+        })
+        .for_each(|(path, img)| img.save(&path).unwrap());
 
     Ok(file)
 }
 
-fn merge_images(java_jar: &PathBuf, working_dir: &PathBuf, file: &PathBuf, timestamps: PathBuf) -> Result<PathBuf, std::io::Error> {
+fn merge_images(
+    java_jar: &PathBuf,
+    working_dir: &PathBuf,
+    file: &PathBuf,
+    timestamps: PathBuf,
+) -> Result<PathBuf, std::io::Error> {
     let mut out_file = PathBuf::from(&working_dir);
     out_file.push(file.file_name().unwrap());
 
     let output = Command::new("java")
-                    .args(&["-jar", java_jar.to_str().unwrap(), "-T", "keep", "-o", out_file.to_str().unwrap(), timestamps.to_str().unwrap()])
-                    .output()
-                    .expect("Failed to execute process");
+        .args(&[
+            "-jar",
+            java_jar.to_str().unwrap(),
+            "-T",
+            "keep",
+            "-o",
+            out_file.to_str().unwrap(),
+            timestamps.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute process");
 
     if output.status.success() {
         Ok(timestamps)
@@ -160,7 +195,7 @@ fn merge_images(java_jar: &PathBuf, working_dir: &PathBuf, file: &PathBuf, times
     }
 }
 
-fn cleanup_images(dir: PathBuf) -> Result<PathBuf, std::io::Error>{
+fn cleanup_images(dir: PathBuf) -> Result<PathBuf, std::io::Error> {
     let mut dir_to_rm = PathBuf::from(&dir);
     dir_to_rm.pop();
 
