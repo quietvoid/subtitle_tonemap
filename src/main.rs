@@ -154,7 +154,7 @@ fn process_images(file: PathBuf, percentage: f32) -> Result<PathBuf, std::io::Er
                     let image::Rgba(mut data) = *p;
                     data[0] = (f32::from(data[0]) * percentage).round() as u8;
                     data[1] = (f32::from(data[1]) * percentage).round() as u8;
-                    data[2] = (f32::from(data[1]) * percentage).round() as u8;
+                    data[2] = (f32::from(data[2]) * percentage).round() as u8;
 
                     *p = image::Rgba(data);
                 });
