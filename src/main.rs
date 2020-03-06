@@ -14,6 +14,9 @@ struct Opt {
     #[structopt(short = "-p", long, default_value = "60")]
     percentage: f32,
 
+    #[structopt(short = "-f", long)]
+    fixed: bool,
+
     #[structopt(short = "-o", long, parse(from_os_str))]
     output: PathBuf,
 
@@ -44,6 +47,7 @@ fn main() -> std::io::Result<()> {
         "Percentage has to be between 0 and 100."
     );
     let percentage: f32 = opt.percentage / 100.0;
+    let fixed: bool = opt.fixed;
 
     working_dir.push(output.as_path());
 
@@ -82,7 +86,7 @@ fn main() -> std::io::Result<()> {
 
         println!("Tonemapping subtitle #{} of {}", current + 1, total);
         extract_images(&java_jar, &working_dir, &file, current)
-            .and_then(|out_file| process_images(out_file, percentage))
+            .and_then(|out_file| process_images(out_file, percentage, fixed))
             .and_then(|timestamps| merge_images(&java_jar, &working_dir, &file, timestamps))
             .and_then(cleanup_images)
             .ok();
@@ -128,7 +132,7 @@ fn extract_images(
     }
 }
 
-fn process_images(file: PathBuf, percentage: f32) -> Result<PathBuf, std::io::Error> {
+fn process_images(file: PathBuf, percentage: f32, fixed: bool) -> Result<PathBuf, std::io::Error> {
     let mut in_dir = PathBuf::from(&file);
     in_dir.pop();
 
@@ -148,13 +152,24 @@ fn process_images(file: PathBuf, percentage: f32) -> Result<PathBuf, std::io::Er
             img.pixels_mut()
                 .filter(|p| {
                     let image::Rgba(data) = **p;
-                    (data[0] > 1 && data[1] > 1 && data[2] > 1 && data[3] > 0)
+                    if fixed {
+                        (data[0] > 100 && data[1] > 100 && data[2] > 100 && data[3] > 0)
+                    } else {
+                        (data[0] > 1 && data[1] > 1 && data[2] > 1 && data[3] > 0)
+                    }
                 })
                 .for_each(|p| {
                     let image::Rgba(mut data) = *p;
-                    data[0] = (f32::from(data[0]) * percentage).round() as u8;
-                    data[1] = (f32::from(data[1]) * percentage).round() as u8;
-                    data[2] = (f32::from(data[2]) * percentage).round() as u8;
+                    
+                    if fixed {
+                        data[0] = (255.0 * percentage).round() as u8;
+                        data[1] = (255.0 * percentage).round() as u8;
+                        data[2] = (255.0 * percentage).round() as u8;
+                    } else {
+                        data[0] = (f32::from(data[0]) * percentage).round() as u8;
+                        data[1] = (f32::from(data[1]) * percentage).round() as u8;
+                        data[2] = (f32::from(data[2]) * percentage).round() as u8;
+                    }
 
                     *p = image::Rgba(data);
                 });
