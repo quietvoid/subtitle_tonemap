@@ -64,9 +64,11 @@ fn main() -> std::io::Result<()> {
     let output = opt.output;
 
     let ratio: f32 = opt.percentage / 100.0;
-    let fixed: bool = opt.fixed;
+    let mut fixed: bool = opt.fixed;
 
     let color = if let Some(c) = opt.color {
+        fixed = true;
+
         assert_eq!(c.len(), 6);
 
         let rr = u8::from_str_radix(&c[0..2], 16).unwrap_or(255);
