@@ -1,32 +1,46 @@
 extern crate image;
 
+use clap::Parser;
 use rayon::prelude::*;
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
-use structopt::StructOpt;
 
-#[derive(StructOpt, Debug)]
-#[structopt(name = "subtitle_tonemap", about = "Tonemap PGS Subtitles")]
+#[derive(Parser, Debug)]
+#[clap(name = env!("CARGO_PKG_NAME"), about = "Maps PGS subtitles to a different color/brightness", author = "quietvoid", version = env!("CARGO_PKG_VERSION"))]
 struct Opt {
-    #[structopt(short = "-p", long, default_value = "60")]
+    #[clap(
+        short = 'p',
+        long,
+        default_value = "60",
+        help = "Percentage to multiply the final color of the subtitle"
+    )]
     percentage: f32,
 
-    #[structopt(short = "-f", long)]
+    #[clap(
+        short = 'f',
+        long,
+        help = "Use 100% white as base color instead of the subtitle's original color"
+    )]
     fixed: bool,
 
-    #[structopt(short = "-o", long, parse(from_os_str))]
+    #[clap(short = 'o', long, parse(from_os_str), help = "Output directory")]
     output: PathBuf,
 
-    #[structopt(name = "input", parse(from_os_str))]
+    #[clap(
+        name = "input",
+        parse(from_os_str),
+        help = "Input subtitle file or directory containing PGS subtitles"
+    )]
     input: PathBuf,
 }
 
 fn main() -> std::io::Result<()> {
     let now = Instant::now();
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     let mut working_dir = env::current_dir()?;
 
@@ -42,11 +56,7 @@ fn main() -> std::io::Result<()> {
     let input = opt.input;
     let output = opt.output;
 
-    assert!(
-        opt.percentage <= 100.0,
-        "Percentage has to be between 0 and 100."
-    );
-    let percentage: f32 = opt.percentage / 100.0;
+    let ratio: f32 = opt.percentage / 100.0;
     let fixed: bool = opt.fixed;
 
     working_dir.push(output.as_path());
@@ -85,9 +95,9 @@ fn main() -> std::io::Result<()> {
         let file = &files[current];
 
         println!("Tonemapping subtitle #{} of {}", current + 1, total);
-        extract_images(&java_jar, &working_dir, &file, current)
-            .and_then(|out_file| process_images(out_file, percentage, fixed))
-            .and_then(|timestamps| merge_images(&java_jar, &working_dir, &file, timestamps))
+        extract_images(&java_jar, &working_dir, file, current)
+            .and_then(|out_file| process_images(out_file, ratio, fixed))
+            .and_then(|timestamps| merge_images(&java_jar, &working_dir, file, timestamps))
             .and_then(cleanup_images)
             .ok();
     });
@@ -98,9 +108,9 @@ fn main() -> std::io::Result<()> {
 }
 
 fn extract_images(
-    java_jar: &PathBuf,
-    working_dir: &PathBuf,
-    file: &PathBuf,
+    java_jar: &Path,
+    working_dir: &Path,
+    file: &Path,
     index: usize,
 ) -> Result<PathBuf, std::io::Error> {
     let mut out_file = PathBuf::from(working_dir);
@@ -132,7 +142,7 @@ fn extract_images(
     }
 }
 
-fn process_images(file: PathBuf, percentage: f32, fixed: bool) -> Result<PathBuf, std::io::Error> {
+fn process_images(file: PathBuf, ratio: f32, fixed: bool) -> Result<PathBuf, std::io::Error> {
     let mut in_dir = PathBuf::from(&file);
     in_dir.pop();
 
@@ -147,28 +157,28 @@ fn process_images(file: PathBuf, percentage: f32, fixed: bool) -> Result<PathBuf
     images
         .par_iter()
         .map(|i| {
-            let mut img = image::open(&i).expect("Opening image failed").to_rgba();
+            let mut img = image::open(&i).expect("Opening image failed").to_rgba8();
 
             img.pixels_mut()
                 .filter(|p| {
                     let image::Rgba(data) = **p;
                     if fixed {
-                        (data[0] > 100 && data[1] > 100 && data[2] > 100 && data[3] > 0)
+                        data[0] > 100 && data[1] > 100 && data[2] > 100 && data[3] > 0
                     } else {
-                        (data[0] > 1 && data[1] > 1 && data[2] > 1 && data[3] > 0)
+                        data[0] > 1 && data[1] > 1 && data[2] > 1 && data[3] > 0
                     }
                 })
                 .for_each(|p| {
                     let image::Rgba(mut data) = *p;
-                    
+
                     if fixed {
-                        data[0] = (255.0 * percentage).round() as u8;
-                        data[1] = (255.0 * percentage).round() as u8;
-                        data[2] = (255.0 * percentage).round() as u8;
+                        data[0] = (255.0 * ratio).round() as u8;
+                        data[1] = (255.0 * ratio).round() as u8;
+                        data[2] = (255.0 * ratio).round() as u8;
                     } else {
-                        data[0] = (f32::from(data[0]) * percentage).round() as u8;
-                        data[1] = (f32::from(data[1]) * percentage).round() as u8;
-                        data[2] = (f32::from(data[2]) * percentage).round() as u8;
+                        data[0] = (f32::from(data[0]) * ratio).round() as u8;
+                        data[1] = (f32::from(data[1]) * ratio).round() as u8;
+                        data[2] = (f32::from(data[2]) * ratio).round() as u8;
                     }
 
                     *p = image::Rgba(data);
@@ -182,9 +192,9 @@ fn process_images(file: PathBuf, percentage: f32, fixed: bool) -> Result<PathBuf
 }
 
 fn merge_images(
-    java_jar: &PathBuf,
-    working_dir: &PathBuf,
-    file: &PathBuf,
+    java_jar: &Path,
+    working_dir: &Path,
+    file: &Path,
     timestamps: PathBuf,
 ) -> Result<PathBuf, std::io::Error> {
     let mut out_file = PathBuf::from(&working_dir);
