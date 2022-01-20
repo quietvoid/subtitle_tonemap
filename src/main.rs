@@ -13,6 +13,16 @@ use std::time::Instant;
 #[clap(name = env!("CARGO_PKG_NAME"), about = "Maps PGS subtitles to a different color/brightness", author = "quietvoid", version = env!("CARGO_PKG_VERSION"))]
 struct Opt {
     #[clap(
+        name = "input",
+        parse(from_os_str),
+        help = "Input subtitle file or directory containing PGS subtitles"
+    )]
+    input: PathBuf,
+
+    #[clap(short = 'o', long, parse(from_os_str), help = "Output directory")]
+    output: PathBuf,
+
+    #[clap(
         short = 'p',
         long,
         default_value = "60",
@@ -27,15 +37,12 @@ struct Opt {
     )]
     fixed: bool,
 
-    #[clap(short = 'o', long, parse(from_os_str), help = "Output directory")]
-    output: PathBuf,
-
     #[clap(
-        name = "input",
-        parse(from_os_str),
-        help = "Input subtitle file or directory containing PGS subtitles"
+        short = 'c',
+        long,
+        help = "Hexadecimal color value to use as base color for --fixed. RRGGBB"
     )]
-    input: PathBuf,
+    color: Option<String>,
 }
 
 fn main() -> std::io::Result<()> {
@@ -58,6 +65,18 @@ fn main() -> std::io::Result<()> {
 
     let ratio: f32 = opt.percentage / 100.0;
     let fixed: bool = opt.fixed;
+
+    let color = if let Some(c) = opt.color {
+        assert_eq!(c.len(), 6);
+
+        let rr = u8::from_str_radix(&c[0..2], 16).unwrap_or(255);
+        let gg = u8::from_str_radix(&c[2..4], 16).unwrap_or(255);
+        let bb = u8::from_str_radix(&c[4..6], 16).unwrap_or(255);
+
+        vec![rr as f32, gg as f32, bb as f32]
+    } else {
+        vec![255.0, 255.0, 255.0]
+    };
 
     working_dir.push(output.as_path());
 
@@ -96,7 +115,7 @@ fn main() -> std::io::Result<()> {
 
         println!("Tonemapping subtitle #{} of {}", current + 1, total);
         extract_images(&java_jar, &working_dir, file, current)
-            .and_then(|out_file| process_images(out_file, ratio, fixed))
+            .and_then(|out_file| process_images(out_file, ratio, fixed, &color))
             .and_then(|timestamps| merge_images(&java_jar, &working_dir, file, timestamps))
             .and_then(cleanup_images)
             .ok();
@@ -142,7 +161,12 @@ fn extract_images(
     }
 }
 
-fn process_images(file: PathBuf, ratio: f32, fixed: bool) -> Result<PathBuf, std::io::Error> {
+fn process_images(
+    file: PathBuf,
+    ratio: f32,
+    fixed: bool,
+    color: &[f32],
+) -> Result<PathBuf, std::io::Error> {
     let mut in_dir = PathBuf::from(&file);
     in_dir.pop();
 
@@ -172,9 +196,9 @@ fn process_images(file: PathBuf, ratio: f32, fixed: bool) -> Result<PathBuf, std
                     let image::Rgba(mut data) = *p;
 
                     if fixed {
-                        data[0] = (255.0 * ratio).round() as u8;
-                        data[1] = (255.0 * ratio).round() as u8;
-                        data[2] = (255.0 * ratio).round() as u8;
+                        data[0] = (color[0] * ratio).round() as u8;
+                        data[1] = (color[1] * ratio).round() as u8;
+                        data[2] = (color[2] * ratio).round() as u8;
                     } else {
                         data[0] = (f32::from(data[0]) * ratio).round() as u8;
                         data[1] = (f32::from(data[1]) * ratio).round() as u8;
