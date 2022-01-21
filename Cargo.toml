@@ -1,9 +1,9 @@
 [package]
 name = "subtitle_tonemap"
-version = "0.2.1"
+version = "1.0.0"
 authors = ["quietvoid"]
 edition = "2021"
-rust-version = "1.56.0"
+rust-version = "1.58.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

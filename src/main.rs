@@ -184,27 +184,41 @@ fn process_images(
         .par_iter()
         .map(|i| {
             let mut img = image::open(&i).expect("Opening image failed").to_rgba8();
+            let old_max = img
+                .pixels()
+                .map(|p| {
+                    let image::Rgba(data) = *p;
+                    get_lightness(data[0] as f32, data[1] as f32, data[2] as f32)
+                })
+                .max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap())
+                .unwrap();
 
             img.pixels_mut()
                 .filter(|p| {
                     let image::Rgba(data) = **p;
-                    if fixed {
-                        data[0] > 100 && data[1] > 100 && data[2] > 100 && data[3] > 0
-                    } else {
-                        data[0] > 1 && data[1] > 1 && data[2] > 1 && data[3] > 0
-                    }
+
+                    data[0] > 1 && data[1] > 1 && data[2] > 1 && data[3] > 0
                 })
                 .for_each(|p| {
                     let image::Rgba(mut data) = *p;
 
                     if fixed {
-                        data[0] = (color[0] * ratio).round() as u8;
-                        data[1] = (color[1] * ratio).round() as u8;
-                        data[2] = (color[2] * ratio).round() as u8;
+                        let src_lightness =
+                            get_lightness(data[0] as f32, data[1] as f32, data[2] as f32);
+
+                        let scale = (src_lightness * ratio) / old_max;
+
+                        let r = color[0] * scale;
+                        let g = color[1] * scale;
+                        let b = color[2] * scale;
+
+                        data[0] = r.round().clamp(0.0, color[0]) as u8;
+                        data[1] = g.round().clamp(0.0, color[1]) as u8;
+                        data[2] = b.round().clamp(0.0, color[2]) as u8;
                     } else {
-                        data[0] = (f32::from(data[0]) * ratio).round() as u8;
-                        data[1] = (f32::from(data[1]) * ratio).round() as u8;
-                        data[2] = (f32::from(data[2]) * ratio).round() as u8;
+                        data[0] = (data[0] as f32 * ratio).round().clamp(0.0, 255.0) as u8;
+                        data[1] = (data[1] as f32 * ratio).round().clamp(0.0, 255.0) as u8;
+                        data[2] = (data[2] as f32 * ratio).round().clamp(0.0, 255.0) as u8;
                     }
 
                     *p = image::Rgba(data);
@@ -250,7 +264,18 @@ fn cleanup_images(dir: PathBuf) -> Result<PathBuf, std::io::Error> {
     let mut dir_to_rm = PathBuf::from(&dir);
     dir_to_rm.pop();
 
-    fs::remove_dir_all(dir_to_rm)?;
+    //fs::remove_dir_all(dir_to_rm)?;
 
     Ok(dir)
+}
+
+#[inline(always)]
+fn get_lightness(r: f32, g: f32, b: f32) -> f32 {
+    let rp = r / 255.0;
+    let gp = g / 255.0;
+    let bp = b / 255.0;
+    let cmax = rp.max(gp).max(bp);
+    let cmin = rp.min(gp).min(bp);
+
+    (cmax + cmin) / 2.0
 }
