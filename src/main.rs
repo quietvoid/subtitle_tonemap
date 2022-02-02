@@ -264,7 +264,7 @@ fn cleanup_images(dir: PathBuf) -> Result<PathBuf, std::io::Error> {
     let mut dir_to_rm = PathBuf::from(&dir);
     dir_to_rm.pop();
 
-    //fs::remove_dir_all(dir_to_rm)?;
+    fs::remove_dir_all(dir_to_rm)?;
 
     Ok(dir)
 }
