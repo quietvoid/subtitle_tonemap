@@ -1,7 +1,3 @@
-extern crate image;
-
-use clap::Parser;
-use rayon::prelude::*;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -9,17 +5,26 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
 
+use clap::Parser;
+use clap::ValueHint;
+use rayon::prelude::*;
+
 #[derive(Parser, Debug)]
 #[clap(name = env!("CARGO_PKG_NAME"), about = "Maps PGS subtitles to a different color/brightness", author = "quietvoid", version = env!("CARGO_PKG_VERSION"))]
 struct Opt {
     #[clap(
         name = "input",
-        parse(from_os_str),
-        help = "Input subtitle file or directory containing PGS subtitles"
+        help = "Input subtitle file or directory containing PGS subtitles",
+        value_hint = ValueHint::FilePath
     )]
     input: PathBuf,
 
-    #[clap(short = 'o', long, parse(from_os_str), help = "Output directory")]
+    #[clap(
+        short = 'o',
+        long,
+        help = "Output directory",
+        value_hint = ValueHint::FilePath
+    )]
     output: PathBuf,
 
     #[clap(
