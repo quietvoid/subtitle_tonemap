@@ -5,21 +5,20 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
 
-use clap::Parser;
-use clap::ValueHint;
+use clap::{Parser, ValueHint};
 use rayon::prelude::*;
 
 #[derive(Parser, Debug)]
-#[clap(name = env!("CARGO_PKG_NAME"), about = "Maps PGS subtitles to a different color/brightness", author = "quietvoid", version = env!("CARGO_PKG_VERSION"))]
+#[command(name = env!("CARGO_PKG_NAME"), about = "Maps PGS subtitles to a different color/brightness", author = "quietvoid", version = env!("CARGO_PKG_VERSION"))]
 struct Opt {
-    #[clap(
-        name = "input",
+    #[arg(
+        id = "input",
         help = "Input subtitle file or directory containing PGS subtitles",
         value_hint = ValueHint::FilePath
     )]
     input: PathBuf,
 
-    #[clap(
+    #[arg(
         short = 'o',
         long,
         help = "Output directory",
@@ -27,7 +26,7 @@ struct Opt {
     )]
     output: PathBuf,
 
-    #[clap(
+    #[arg(
         short = 'p',
         long,
         default_value = "60",
@@ -35,14 +34,14 @@ struct Opt {
     )]
     percentage: f32,
 
-    #[clap(
+    #[arg(
         short = 'f',
         long,
         help = "Use 100% white as base color instead of the subtitle's original color"
     )]
     fixed: bool,
 
-    #[clap(
+    #[arg(
         short = 'c',
         long,
         help = "Hexadecimal color value to use as base color for --fixed. RRGGBB"
