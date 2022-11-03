@@ -148,7 +148,7 @@ fn extract_images(
     out_file.push(format!("sub{}.xml", index));
 
     let output = Command::new("java")
-        .args(&[
+        .args([
             "-jar",
             java_jar.to_str().unwrap(),
             "-T",
@@ -187,7 +187,7 @@ fn process_images(
     images
         .par_iter()
         .map(|i| {
-            let mut img = image::open(&i).expect("Opening image failed").to_rgba8();
+            let mut img = image::open(i).expect("Opening image failed").to_rgba8();
             let old_max = img
                 .pixels()
                 .map(|p| {
@@ -245,7 +245,7 @@ fn merge_images(
     out_file.push(file.file_name().unwrap());
 
     let output = Command::new("java")
-        .args(&[
+        .args([
             "-jar",
             java_jar.to_str().unwrap(),
             "-T",
